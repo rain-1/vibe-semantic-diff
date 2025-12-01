@@ -47,7 +47,14 @@ class SemanticDiff:
             
             # Heuristic: Threshold is mean - 0.5 * std
             # This assumes that "matches" are the dominant mode, or at least significant
-            threshold = float(mean_max + 0.5 * std_max)
+            threshold = float(mean_max) - 0.5 * float(std_max)
+            
+            # Ensure threshold isn't too high (e.g. if documents are identical)
+            # Cap at 0.95 unless mean is very low? 
+            # Actually, if documents are identical, mean=1.0, std=0.0 -> threshold=1.0.
+            # We should subtract a small epsilon to handle float noise.
+            threshold = min(threshold, 0.95)
+            
             self.last_threshold_stats = {
                 'mean': float(mean_max),
                 'std': float(std_max),
@@ -69,6 +76,10 @@ class SemanticDiff:
         
         for i in range(1, n + 1):
             for j in range(1, m + 1):
+                # Optimization: Exact string match
+                if sentences1[i-1] == sentences2[j-1]:
+                    sim_matrix[i-1][j-1] = 1.0
+                
                 score_match = dp[i-1][j-1] + sim_matrix[i-1][j-1]
                 score_skip_1 = dp[i-1][j] - gap_penalty
                 score_skip_2 = dp[i][j-1] - gap_penalty
@@ -94,7 +105,8 @@ class SemanticDiff:
             if i > 0 and j > 0 and pointers[i][j] == 0:
                 # Match
                 sim = sim_matrix[i-1][j-1]
-                if sim >= threshold:
+                # Force match if strings are identical or sim is high enough
+                if sentences1[i-1] == sentences2[j-1] or sim >= threshold:
                     alignment.append(('MATCH', sentences1[i-1], sentences2[j-1], sim))
                 else:
                     # Even if it was the "best" path, if it's below threshold, treat as diff
@@ -120,7 +132,9 @@ class SemanticDiff:
         with open(file2_path, 'r', encoding='utf-8') as f:
             text2 = f.read()
             
+        return self.diff_files_from_text(text1, text2)
+
+    def diff_files_from_text(self, text1, text2):
         sent1 = self.split_sentences(text1)
         sent2 = self.split_sentences(text2)
-        
         return self.align_sentences(sent1, sent2)
