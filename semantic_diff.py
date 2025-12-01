@@ -47,8 +47,7 @@ class SemanticDiff:
             
             # Heuristic: Threshold is mean - 0.5 * std
             # This assumes that "matches" are the dominant mode, or at least significant
-            threshold = float(mean_max)
-            
+            threshold = float(mean_max + 0.5 * std_max)
             self.last_threshold_stats = {
                 'mean': float(mean_max),
                 'std': float(std_max),
