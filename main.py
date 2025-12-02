@@ -17,6 +17,11 @@ def main():
     
     args = parser.parse_args()
     
+    # Convert to absolute paths
+    import os
+    args.file1 = os.path.abspath(args.file1)
+    args.file2 = os.path.abspath(args.file2)
+    
     if args.split_markdown:
         run_pipeline(args.file1, args.file2, threshold=args.threshold, output_file=args.output)
         return

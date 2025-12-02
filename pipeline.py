@@ -45,7 +45,8 @@ def run_pipeline(file1, file2, threshold=None, output_file=None):
             
             # Run Semantic Diff
             print(f"Diffing section: {title}...")
-            alignment = diff_tool.diff_files_from_text(content1, content2)
+            # Pass file paths so embeddings are stored with correct metadata
+            alignment = diff_tool.diff_files_from_text(content1, content2, file1_path=file1, file2_path=file2)
             
             for action, s1, s2, score in alignment:
                 s1 = clean_text(s1)

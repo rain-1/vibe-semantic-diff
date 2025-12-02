@@ -1,12 +1,15 @@
 import re
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
+import os
+from database import DatabaseManager
 
 class SemanticDiff:
     def __init__(self, model_name='all-MiniLM-L6-v2', similarity_threshold=None):
         self.model = SentenceTransformer(model_name)
         self.similarity_threshold = similarity_threshold
         self.last_threshold_stats = {}
+        self.db = DatabaseManager()
 
     def split_sentences(self, text):
         # Simple regex-based sentence splitting for now
@@ -22,12 +25,44 @@ class SemanticDiff:
         # Compute cosine similarity
         return util.cos_sim(emb1, emb2).cpu().numpy()
 
-    def align_sentences(self, sentences1, sentences2):
+    def _process_embeddings(self, embeddings, sentences, file_path):
+        doc_name = os.path.basename(file_path)
+        # Convert tensor to numpy
+        embeddings_np = embeddings.cpu().numpy()
+        
+        for i, vector in enumerate(embeddings_np):
+            text = sentences[i]
+            
+            # Check for matches BEFORE storing, to avoid matching itself immediately (though logic handles "different doc")
+            matches = self.db.find_matches(vector)
+            
+            # Filter matches to exclude the current document (by path)
+            # The user said: "if the match is a different document it's worth pointing this out"
+            external_matches = [m for m in matches if m[2] != file_path]
+            
+            if external_matches:
+                print(f"\n[ALERT] Match found for '{text[:30]}...' in other documents:")
+                for match_text, match_doc, match_path, score in external_matches[:3]: # Show top 3
+                    print(f"  - {match_doc} ({score:.2f}): {match_text[:50]}...")
+            
+            # Store in DB
+            self.db.store_embedding(vector, text, doc_name, file_path)
+
+    def align_sentences(self, sentences1, sentences2, file1_path=None, file2_path=None):
         if not sentences1 or not sentences2:
             return []
 
         emb1 = self.get_embeddings(sentences1)
         emb2 = self.get_embeddings(sentences2)
+        
+        # Store and check embeddings for file 1
+        if file1_path:
+            self._process_embeddings(emb1, sentences1, file1_path)
+            
+        # Store and check embeddings for file 2
+        if file2_path:
+            self._process_embeddings(emb2, sentences2, file2_path)
+
         sim_matrix = self.compute_similarity_matrix(emb1, emb2)
         
         n = len(sentences1)
@@ -132,9 +167,9 @@ class SemanticDiff:
         with open(file2_path, 'r', encoding='utf-8') as f:
             text2 = f.read()
             
-        return self.diff_files_from_text(text1, text2)
+        return self.diff_files_from_text(text1, text2, file1_path, file2_path)
 
-    def diff_files_from_text(self, text1, text2):
+    def diff_files_from_text(self, text1, text2, file1_path=None, file2_path=None):
         sent1 = self.split_sentences(text1)
         sent2 = self.split_sentences(text2)
-        return self.align_sentences(sent1, sent2)
+        return self.align_sentences(sent1, sent2, file1_path, file2_path)
